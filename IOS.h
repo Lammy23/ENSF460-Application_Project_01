@@ -4,6 +4,7 @@
 #include <xc.h>
 
 // Function declarations
+
 void IOinit();
 void IOcheck();
 extern uint8_t TMR2Flag;
