@@ -68,56 +68,56 @@ uint16_t printStatus = 0;
  */
 
 int main(void) {
-    
+
     /** This is usually where you would add run-once code
      * e.g., peripheral initialization. For the first labs
      * you might be fine just having it here. For more complex
      * projects, you might consider having one or more initialize() functions
      */
-    
+
     AD1PCFG = 0xFFFF; /* keep this line as it sets I/O pins that can also be analog to be digital */
-    
+
     newClk(500); // 500kHz Clock
-    
+
     /* Initializations*/
     IOinit();
-    /* Let's set up our UART */    
+    /* Let's set up our UART */
     InitUART2();
-  
-    while(1) {
+
+    while (1) {
         Idle();
         IOcheck();
     }
-    
+
     return 0;
 }
 
 
 // Timer 2 interrupt subroutine
-void __attribute__((interrupt, no_auto_psv)) _T2Interrupt(void){
+
+void __attribute__((interrupt, no_auto_psv)) _T2Interrupt(void) {
     //Don't forget to clear the timer 2 interrupt flag!
     IFS0bits.T2IF = 0;
 }
 
-void __attribute__((interrupt, no_auto_psv)) _T3Interrupt(void){
+void __attribute__((interrupt, no_auto_psv)) _T3Interrupt(void) {
     IFS0bits.T3IF = 0;
     TMR3 = 0;
-    
+
     // Swap the light output]
     LATBbits.LATB8 ^= 1;
 }
 
-void __attribute__((interrupt, no_auto_psv)) _CNInterrupt(void){
-    
+void __attribute__((interrupt, no_auto_psv)) _CNInterrupt(void) {
+
     // If any button is pressed
-     if (PORTBbits.RB2 == 0 ||PORTBbits.RB4 == 0 || PORTAbits.RA4 == 0) {
+    if (PORTBbits.RB2 == 0 || PORTBbits.RB4 == 0 || PORTAbits.RA4 == 0) {
         anyPressed = 1;
-    }
-    else{
+    } else {
         anyPressed = 0;
     }
     IFS1bits.CNIF = 0;
-   
+
     // Set PB flags
     PB1_pressed = !PORTBbits.RB2;
     PB2_pressed = !PORTBbits.RB4;
