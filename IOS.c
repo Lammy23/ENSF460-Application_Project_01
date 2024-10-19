@@ -13,19 +13,21 @@
 #include "IOs.h"
 #include "UART2.h"
 
-uint8_t TMR2Flag = 0;
-
-extern uint16_t PB1_pressed;
-extern uint16_t PB2_pressed;
-extern uint16_t PB3_pressed;
-extern uint16_t noPressedPrinted;
-extern uint16_t anyPressed;
-extern uint16_t printStatus;
+extern uint8_t PB1_pressed;
+extern uint8_t PB2_pressed;
+extern uint8_t PB3_pressed;
+extern uint8_t anyPressed;
+extern uint8_t minutes;
+extern uint8_t seconds;
+extern uint8_t timePB2Pressed;
+extern uint8_t clkStatus;
+extern uint8_t DEBUG;
 
 void IOinit() {
     //T3CON config
-    T2CONbits.T32 = 0; // operate timer 2 as 16 bit timer
-    T3CONbits.TCKPS = 0b10; // set prescaler to 1:8
+    T2CONbits.T32 = 0; // operate timer 2 and 3 as separate 16 bit timers
+
+    T3CONbits.TCKPS = 0b10; // set prescaler to 1:64
     T3CONbits.TCS = 0; // use internal clock
     T3CONbits.TSIDL = 0; //operate in idle mode
     IPC2bits.T3IP = 2; //7 is highest and 1 is lowest pri.
@@ -33,138 +35,111 @@ void IOinit() {
     IEC0bits.T3IE = 1; //enable timer interrupt
     PR3 = 1000; // set the count value for 0.5 s (or 500 ms)
     TMR3 = 0;
-    T3CONbits.TON = 1;
+    T3CONbits.TON = 0; // Leave the timer off until needed
+
+    // Same initialization logic as timer 3, except priority is one higher
+    T2CONbits.TCKPS = 0b10;
+    T2CONbits.TCS = 0;
+    T2CONbits.TSIDL = 0;
+    IPC1bits.T2IP = 3;
+    IFS0bits.T2IF = 0;
+    IEC0bits.T2IE = 1;
+    PR2 = 1000;
+    TMR2 = 0;
+    T2CONbits.TON = 0;
+
+    // Same initialization logic as timer 3, except priority is one higher
+    T1CONbits.TCKPS = 0b10;
+    T1CONbits.TCS = 0;
+    T1CONbits.TSIDL = 0;
+    IPC0bits.T1IP = 3;
+    IFS0bits.T1IF = 0;
+    IEC0bits.T1IE = 1;
+    PR1 = 1000;
+    TMR1 = 0;
+    T1CONbits.TON = 0;
+
 
     /* Let's set up some I/O */
     TRISBbits.TRISB8 = 0;
-    LATBbits.LATB8 = 1;
-    
+    LATBbits.LATB8 = 0;
+
     TRISAbits.TRISA4 = 1;
     CNPU1bits.CN0PUE = 1;
     CNEN1bits.CN0IE = 1;
-    
+
     TRISBbits.TRISB4 = 1;
     CNPU1bits.CN1PUE = 1;
     CNEN1bits.CN1IE = 1;
-    
+
     TRISBbits.TRISB2 = 1;
     CNPU1bits.CN6PUE = 1;
     CNEN1bits.CN6IE = 1;
-    
+
+    // Initializing CN interrupt
     IPC4bits.CNIP = 6;
     IFS1bits.CNIF = 0;
     IEC1bits.CNIE = 1;
 }
 
-void IOcheck() {     
-    
-    // If all are pressed
-    if(PB1_pressed && PB2_pressed && PB3_pressed){
-        PR3 = 1;
-        TMR3 = 0;
-        T3CONbits.TON = 1;
+void IOcheck() {
+    if (anyPressed && clkStatus == 2) clkStatus = 0; // stays in status 2 until any PB is pressed (status 2 is finished)
+    if (clkStatus == 0) { // Status SET
+        LATBbits.LATB8 = 0; // Turn off LED
         
-        // If last printed is not all PBs pressed
-        if (printStatus != 123) {
-            Disp2String("\rAll PBs pressed\033[K");
-            printStatus = 123;
+        if (PB1_pressed) { // If PB1_pressed start timer to check if held
+            PR3 = 3906;
+            TMR3 = 0;
+            T3CONbits.TON = 1;
         }
-        noPressedPrinted = 0;
-    }
-    
-    // If PB1 and PB2 are pressed
-    else if(PB1_pressed && PB2_pressed)
-    {
-        PR3 = 1;
-        TMR3 = 0;
-        T3CONbits.TON = 1;
         
-        // If last printed is not PB1 and PB2 are pressed
-        if (printStatus != 12) {
-            Disp2String("\rPB1 and PB2 are pressed\033[K");
-            printStatus = 12;
-        }
-        noPressedPrinted = 0;
-    }
-    
-    // If PB1 and PB3 are pressed
-    else if(PB1_pressed && PB3_pressed)
-    {
-        PR3 = 1;
-        TMR3 = 0;
-        T3CONbits.TON = 1;
+        if (PB2_pressed) { // If PB2_pressed start timer to check if held
+            PR3 = 3906;
+            TMR3 = 0;
+            T3CONbits.TON = 1;
+
+        } else timePB2Pressed = 0; // Resets timePB2Pressed if released
         
-        // If last printed is not PB1 and PB3 are pressed
-        if (printStatus != 13) {
-            Disp2String("\rPB1 and PB3 are pressed\033[K");
-            printStatus = 13;
+        if (PB3_pressed) { // If PB3_pressed start timer to check if held
+            PR2 = 11719;
+            TMR2 = 0;
+            T2CONbits.TON = 1;
+
+        } else if (T2CONbits.TON == 1) { // If released before timer reaches three seconds
+            T2CONbits.TON = 0; // stop timer
+            if (minutes == 0 && seconds == 0) { // Do nothing if already reset
+            } else { // If minutes and seconds not already reset
+                if(DEBUG) Disp2String("Take me to status 1\n\r");
+                clkStatus = 1; // Move to CNT status
+
+            }
         }
-        noPressedPrinted = 0;
-    }
-    
-    // If PB2 and PB3 are pressed
-    else if(PB2_pressed && PB3_pressed)
-    {
-        PR3 = 1;
-        TMR3 = 0;
-        T3CONbits.TON = 1;
         
-        // If last printed is not PB2 and PB3 are pressed
-        if (printStatus != 23) {
-            Disp2String("\rPB2 and PB3 are pressed\033[K");
-            printStatus = 23;
+        if (!anyPressed) { // If nothing is pressed turn off timer 3
+            T3CONbits.TON = 0;
         }
-        noPressedPrinted = 0;
     }
-    
-    // If only PB1 is pressed
-    else if (PB1_pressed){
-        PR3 = 977; // Calculated value for 0.25 second delay
-        TMR3 = 0;
-        T3CONbits.TON = 1;
+    if (clkStatus == 1) { // CNT status
+        if (T1CONbits.TON == 0) { // If timer1 is off start it
+            PR1 = 3900;
+            TMR1 = 0;
+            T1CONbits.TON = 1;
+        }
+
+        if(DEBUG) Disp2String("Status1\n\r");
+        if (PB3_pressed) { // If PB3 is pressed pause and return to SET status and turn off timer1
+            if(DEBUG) Disp2String("Going back to status 0\n\r");
+            clkStatus = 0;
+            TMR1 = 0;
+            T1CONbits.TON = 0;
+        }
         
-        // If last printed is not PB1 pressed
-        if (printStatus != 1) {
-            Disp2String("\rPB1 pressed\033[K");
-            printStatus = 1;
+        if (minutes == 0 && seconds == 0){ // If clock completes move to FIN status and turn on LED and turn off timer1
+            TMR1 = 0;
+            T1CONbits.TON = 0;
+            LATBbits.LATB8 = 1;
+            clkStatus = 2;
         }
-        noPressedPrinted = 0;
     }
     
-    // If only PB2 is pressed
-    else if (PB2_pressed){
-        PR3 = 7812; // Calculated value for 2 second delay
-        TMR3 = 0;
-        T3CONbits.TON = 1;
-        
-        // If last printed is not PB2 pressed
-        if (printStatus != 2) {
-            Disp2String("\rPB2 pressed\033[K");
-            printStatus = 2;
-        }
-        noPressedPrinted = 0;
-    }
-    
-    // If only PB3 pressed
-    else if (PB3_pressed){
-        PR3 = 15627; // Calculated value for 4 second delay
-        TMR3 = 0;
-        T3CONbits.TON = 1;
-        
-        // If last printed is not PB3 pressed
-        if (printStatus != 3) {
-            Disp2String("\rPB3 pressed\033[K");
-            printStatus = 3;
-        }
-        noPressedPrinted = 0;
-    }
-    
-    // If nothing is pressed and Nothing Pressed has not been printed
-    else if (!anyPressed && !noPressedPrinted) {
-        Disp2String("\rNothing pressed\033[K");
-        LATBbits.LATB8 = 0;
-        T3CONbits.TON = 0;
-        noPressedPrinted = 1;         
-        printStatus = 0;
-    }
 }

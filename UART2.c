@@ -190,7 +190,7 @@ void Disp2Dec(uint16_t Dec_num)
 {
     uint8_t rem;  //remainder in div by 10
     uint16_t quot; 
-    uint8_t ctr = 0;  //counter
+    uint8_t ctr = 3;  //counter
     XmitUART2(' ',1);  // Disp Gap
     while(ctr<5)
     {
